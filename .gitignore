@@ -1,0 +1,100 @@
+
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ==============================
+# Virtual Environments
+# ==============================
+.venv/
+venv/
+env/
+ENV/
+
+# ==============================
+# Environment Variables / Secrets
+# ==============================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ==============================
+# IDE / Editor
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==============================
+# Jupyter
+# ==============================
+.ipynb_checkpoints/
+
+# ==============================
+# RAG Data / Documents
+# ==============================
+data/raw/*
+data/processed/*
+data/uploads/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/uploads/.gitkeep
+
+# ==============================
+# Vector Database / Embeddings
+# ==============================
+faiss_index/
+chroma_db/
+chroma/
+qdrant_storage/
+vector_store/
+*.faiss
+*.index
+
+# ==============================
+# ML Models / Cache
+# ==============================
+models/
+checkpoints/
+.cache/
+huggingface_cache/
+
+# ==============================
+# Logs
+# ==============================
+*.log
+logs/
+
+# ==============================
+# Evaluation Outputs
+# ==============================
+reports/generated/
+evaluation_results/
+*.csv
+*.jsonl
+
+# ==============================
+# OS Files
+# ==============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Build / Distribution
+# ==============================
+build/
+dist/
+*.egg-info/
