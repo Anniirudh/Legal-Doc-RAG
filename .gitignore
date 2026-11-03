@@ -98,3 +98,8 @@ desktop.ini
 build/
 dist/
 *.egg-info/
+
+.env
+.venv/
+__pycache__/
+*.pyc

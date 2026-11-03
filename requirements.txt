@@ -2,3 +2,6 @@ pymupdf
 langchain-text-splitters
 sentence-transformers
 numpy
+faiss-cpu
+groq
+python-dotenv
