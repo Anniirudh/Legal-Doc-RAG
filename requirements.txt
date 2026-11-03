@@ -1,1 +1,4 @@
 pymupdf
+langchain-text-splitters
+sentence-transformers
+numpy
