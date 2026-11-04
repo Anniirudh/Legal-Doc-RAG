@@ -1,144 +1,115 @@
+"""HTTP API for the LegalLens React application."""
 
-import streamlit as st
-import tempfile
+from __future__ import annotations
+
 import os
+import tempfile
+import uuid
+from pathlib import Path
+from threading import Lock
 
-from src.rag_pipeline import (
-    build_rag_index,
-    retrieve_context,
-    generate_answer
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+app = FastAPI(title="LegalLens API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
 )
 
-
-st.set_page_config(
-    page_title="LegalLens AI",
-    page_icon="📄",
-    layout="wide"
-)
+_sessions: dict[str, dict] = {}
+_sessions_lock = Lock()
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
-st.title("📄 LegalLens AI")
-st.caption("Ask questions about your legal documents using RAG.")
+def _get_pipeline():
+    """Load the embedding model only when a document is first processed."""
+    from src.rag_pipeline import build_rag_index, generate_answer, retrieve_context
 
-# Session state
-if "index" not in st.session_state:
-    st.session_state.index = None
-
-if "chunks" not in st.session_state:
-    st.session_state.chunks = None
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+    return build_rag_index, generate_answer, retrieve_context
 
 
-# Sidebar
-with st.sidebar:
-
-    st.header("Upload Document")
-
-    uploaded_file = st.file_uploader(
-        "Upload an employment agreement",
-        type=["pdf"]
-    )
-
-    if uploaded_file:
-
-        if st.button("Process Document"):
-
-            with st.spinner("Processing PDF..."):
-
-                temp_path = None
-
-                try:
-                    with tempfile.NamedTemporaryFile(
-                        delete=False,
-                        suffix=".pdf"
-                    ) as temp_file:
-
-                        temp_file.write(uploaded_file.getvalue())
-                        temp_path = temp_file.name
-
-                    index, chunks = build_rag_index(temp_path)
-
-                    st.session_state.index = index
-                    st.session_state.chunks = chunks
-                    st.session_state.messages = []
-
-                    st.success("Document processed successfully!")
-
-                except Exception as e:
-                    st.error(f"Processing failed: {e}")
-
-                finally:
-                    if temp_path and os.path.exists(temp_path):
-                        os.remove(temp_path)
+class Question(BaseModel):
+    question: str
 
 
-# Main interface
-if st.session_state.index is None:
+def _index_pdf(path: str, filename: str) -> dict:
+    try:
+        build_rag_index, _, _ = _get_pipeline()
+        index, chunks = build_rag_index(path)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not process this PDF: {exc}") from exc
+    if not chunks:
+        raise HTTPException(status_code=422, detail="No readable text was found in this PDF.")
+    session_id = str(uuid.uuid4())
+    with _sessions_lock:
+        _sessions[session_id] = {"index": index, "chunks": chunks}
+    return {
+        "session_id": session_id,
+        "filename": filename,
+        "pages": len({chunk["page_number"] for chunk in chunks}),
+        "chunks": len(chunks),
+        "message": "Your document is ready for questions.",
+    }
 
-    st.info("Upload and process a PDF to start asking questions.")
 
-else:
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "service": "LegalLens API"}
 
-    st.success("Document ready for questions!")
 
-    # Display previous messages
-    for message in st.session_state.messages:
+@app.post("/api/documents")
+async def upload_document(file: UploadFile = File(...)):
+    filename = Path(file.filename or "document.pdf").name
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Please choose a PDF document.")
+    contents = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="PDFs must be smaller than 25 MB.")
+    if not contents.startswith(b"%PDF"):
+        raise HTTPException(status_code=415, detail="This file does not appear to be a valid PDF.")
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(contents)
+            temp_path = temp_file.name
+        return _index_pdf(temp_path, filename)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
 
-            if "sources" in message:
-                with st.expander("View retrieved sources"):
-                    for source in message["sources"]:
-                        st.write(
-                            f"Page {source['page_number']}:"
-                        )
-                        st.write(source["text"])
+@app.post("/api/demo")
+def load_demo_document():
+    demo_path = Path(__file__).parent / "data" / "documents" / "employee-agreement.pdf"
+    if not demo_path.exists():
+        raise HTTPException(status_code=404, detail="The sample agreement is not available.")
+    return _index_pdf(str(demo_path), demo_path.name)
 
-    # User input
-    query = st.chat_input("Ask something about your document...")
 
-    if query:
+@app.post("/api/sessions/{session_id}/questions")
+def ask_question(session_id: str, payload: Question):
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Enter a question about your document.")
+    with _sessions_lock:
+        session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="This document session has expired. Upload it again.")
+    try:
+        _, generate_answer, retrieve_context = _get_pipeline()
+        sources = retrieve_context(question, session["index"], session["chunks"])
+        answer = generate_answer(question, sources) if sources else "I couldn't find relevant information in this document."
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Answer generation failed: {exc}") from exc
+    return {"answer": answer, "sources": sources}
 
-        st.session_state.messages.append({
-            "role": "user",
-            "content": query
-        })
 
-        with st.chat_message("user"):
-            st.markdown(query)
-
-        with st.chat_message("assistant"):
-
-            with st.spinner("Searching document..."):
-
-                retrieved_chunks = retrieve_context(
-                    query,
-                    st.session_state.index,
-                    st.session_state.chunks
-                )
-
-                if not retrieved_chunks:
-                    answer = "I couldn't find relevant information in the document."
-                else:
-                    answer = generate_answer(
-                        query,
-                        retrieved_chunks
-                    )
-
-                st.markdown(answer)
-
-                with st.expander("View retrieved sources"):
-                    for source in retrieved_chunks:
-                        st.write(
-                            f"Page {source['page_number']}:"
-                        )
-                        st.write(source["text"])
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": answer,
-                    "sources": retrieved_chunks
-                })
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str):
+    with _sessions_lock:
+        _sessions.pop(session_id, None)
+    return {"status": "cleared"}

@@ -98,6 +98,8 @@ desktop.ini
 build/
 dist/
 *.egg-info/
+node_modules/
+frontend-dist/
 
 .env
 .venv/
