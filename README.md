@@ -4,7 +4,7 @@
 
 LegalLens AI is a lightweight document question-answering application that allows users to upload legal documents, such as employment agreements and company policies, and ask questions about their contents.
 
-It uses semantic search to retrieve relevant document passages and a Large Language Model (LLM) to generate answers grounded in the uploaded document.
+It uses semantic search to retrieve relevant document passages and a Large Language Model (LLM) to generate answers grounded in the uploaded document. The interface is a React + Vite application backed by a small FastAPI service that calls the existing RAG pipeline.
 
 The project demonstrates the fundamental concepts of Retrieval-Augmented Generation, including document ingestion, text chunking, embeddings, vector search, retrieval, and context-aware generation.
 
@@ -31,7 +31,8 @@ The project demonstrates the fundamental concepts of Retrieval-Augmented Generat
 | Numerical Operations | NumPy |
 | LLM Provider | Groq API |
 | LLM Model | GPT-OSS 20B |
-| Frontend | Streamlit |
+| Frontend | React, Vite, JavaScript |
+| API | FastAPI |
 
 ## 🏗️ Architecture
 
@@ -79,7 +80,10 @@ Grounded Answer + Sources
 ```text
 legal-doc-rag/
 │
-├── app.py
+├── app.py                 # FastAPI service
+├── frontend/              # React application
+├── package.json
+├── vite.config.js
 │
 ├── src/
 │   ├── __init__.py
@@ -149,17 +153,39 @@ data/documents/
 
 For the terminal-based pipeline, update the PDF path in `src/rag_pipeline.py` if necessary.
 
-### 6. Run the application
+### 6. Install frontend dependencies
 
 ```bash
-python -m streamlit run app.py
+npm install
 ```
 
-Open the local URL displayed in your terminal, usually:
+### 7. Run the application
+
+Install the Python dependencies into the active virtual environment (run this after updating the repository):
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Start the API in one terminal from the project root:
+
+```bash
+python -m uvicorn app:app --reload
+```
+
+Start the Vite development server in a second terminal:
+
+```bash
+npm run dev
+```
+
+Open the local URL displayed by Vite, usually:
 
 ```text
-http://localhost:8501
+http://localhost:5173
 ```
+
+The frontend sends PDF uploads and document questions to the local API. The included employee agreement can be loaded from the interface with **Try a sample agreement**. API sessions are held in memory and are cleared when the server restarts.
 
 ## 🧠 Core RAG Concepts Implemented
 
